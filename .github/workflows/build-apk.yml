@@ -40,9 +40,13 @@ jobs:
       - name: Generate Gradle Wrapper
         run: gradle wrapper --gradle-version 8.9
 
-      - name: Build Debug APK
+      - name: Show SHA1
         run: |
           chmod +x gradlew
+          ./gradlew :app:signingReport
+
+      - name: Build Debug APK
+        run: |
           ./gradlew assembleDebug
 
       - name: Upload APK
