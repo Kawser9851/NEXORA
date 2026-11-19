@@ -12,7 +12,20 @@
           "package_name": "com.nexora.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "661682421824-r9m4enuq7ada88c6knfkpbtmv80mgqif.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nexora.app",
+            "certificate_hash": "452be490054cb0fb32bec985c36a3e3a468274da"
+          }
+        },
+        {
+          "client_id": "661682421824-59gpikvvrtgl0nhvvtdbq01t0crd9r77.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyB5g7Dnuj4gQ1u6P8vNq5Sl2kMrdreu4po"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "661682421824-59gpikvvrtgl0nhvvtdbq01t0crd9r77.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
