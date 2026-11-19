@@ -40,14 +40,14 @@ jobs:
       - name: Generate Gradle Wrapper
         run: gradle wrapper --gradle-version 8.9
 
-      - name: Show SHA1
-        run: |
-          chmod +x gradlew
-          ./gradlew :app:signingReport
-
       - name: Build Debug APK
         run: |
+          chmod +x gradlew
           ./gradlew assembleDebug
+
+      - name: Show SHA1
+        run: |
+          ./gradlew :app:signingReport
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
