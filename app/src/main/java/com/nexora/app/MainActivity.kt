@@ -1,28 +1,36 @@
 package com.nexora.app
 
+import android.app.Activity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.GoogleAuthProvider
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,6 +48,11 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun NEXORAScreen(auth: FirebaseAuth) {
+
+    val context = LocalContext.current
+    val webClientId = stringResource(
+        id = R.string.default_web_client_id
+    )
 
     var user by remember {
         mutableStateOf(auth.currentUser)
@@ -62,6 +75,58 @@ private fun NEXORAScreen(auth: FirebaseAuth) {
             auth.removeAuthStateListener(listener)
         }
     }
+
+    val googleLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+
+            if (result.resultCode == Activity.RESULT_OK) {
+
+                val task = GoogleSignIn.getSignedInAccountFromIntent(
+                    result.data
+                )
+
+                try {
+                    val account = task.getResult(
+                        ApiException::class.java
+                    )
+
+                    val idToken = account.idToken
+
+                    if (idToken == null) {
+                        loading = false
+                        message = "Google ID Token পাওয়া যায়নি।"
+                    } else {
+                        val credential =
+                            GoogleAuthProvider.getCredential(
+                                idToken,
+                                null
+                            )
+
+                        auth.signInWithCredential(credential)
+                            .addOnCompleteListener {
+                                loading = false
+                                message =
+                                    if (it.isSuccessful) {
+                                        "Google Login Successful!"
+                                    } else {
+                                        it.exception?.localizedMessage
+                                            ?: "Google Login Failed."
+                                    }
+                            }
+                    }
+
+                } catch (e: ApiException) {
+                    loading = false
+                    message = "Google Login Failed: ${e.statusCode}"
+                }
+
+            } else {
+                loading = false
+                message = "Google Login বাতিল হয়েছে।"
+            }
+        }
 
     val bg = Brush.verticalGradient(
         listOf(
@@ -120,8 +185,10 @@ private fun NEXORAScreen(auth: FirebaseAuth) {
                         if (user == null) {
 
                             Text(
-                                if (isSignUp) "Create Your Account"
-                                else "Welcome Back",
+                                if (isSignUp)
+                                    "Create Your Account"
+                                else
+                                    "Welcome Back",
                                 color = Color.White,
                                 fontSize = 23.sp,
                                 fontWeight = FontWeight.Bold
@@ -163,7 +230,7 @@ private fun NEXORAScreen(auth: FirebaseAuth) {
                                         password.length < 6
                                     ) {
                                         message =
-                                            "Enter a valid email and password (minimum 6 characters)."
+                                            "সঠিক Email এবং কমপক্ষে ৬ অক্ষরের Password দাও।"
                                     } else {
                                         loading = true
                                         message = ""
@@ -183,13 +250,12 @@ private fun NEXORAScreen(auth: FirebaseAuth) {
 
                                         task.addOnCompleteListener {
                                             loading = false
-
                                             message =
                                                 if (it.isSuccessful) {
                                                     "Welcome to NEXORA!"
                                                 } else {
                                                     it.exception?.localizedMessage
-                                                        ?: "Login failed."
+                                                        ?: "Login Failed."
                                                 }
                                         }
                                     }
@@ -198,8 +264,10 @@ private fun NEXORAScreen(auth: FirebaseAuth) {
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
-                                    if (isSignUp) "Create Account"
-                                    else "Login"
+                                    if (isSignUp)
+                                        "Create Account"
+                                    else
+                                        "Login"
                                 )
                             }
 
@@ -228,15 +296,54 @@ private fun NEXORAScreen(auth: FirebaseAuth) {
                                     loading = true
                                     message = ""
 
+                                    try {
+                                        val options =
+                                            GoogleSignInOptions.Builder(
+                                                GoogleSignInOptions.DEFAULT_SIGN_IN
+                                            )
+                                                .requestEmail()
+                                                .requestIdToken(webClientId)
+                                                .build()
+
+                                        val client =
+                                            GoogleSignIn.getClient(
+                                                context,
+                                                options
+                                            )
+
+                                        googleLauncher.launch(
+                                            client.signInIntent
+                                        )
+
+                                    } catch (e: Exception) {
+                                        loading = false
+                                        message =
+                                            e.localizedMessage
+                                                ?: "Google Login শুরু করা যায়নি।"
+                                    }
+                                },
+                                enabled = !loading,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Continue with Google")
+                            }
+
+                            Spacer(Modifier.height(10.dp))
+
+                            OutlinedButton(
+                                onClick = {
+                                    loading = true
+                                    message = ""
+
                                     auth.signInAnonymously()
                                         .addOnCompleteListener {
                                             loading = false
                                             message =
                                                 if (it.isSuccessful)
-                                                    "Guest login successful!"
+                                                    "Guest Login Successful!"
                                                 else
                                                     it.exception?.localizedMessage
-                                                        ?: "Guest login failed."
+                                                        ?: "Guest Login Failed."
                                         }
                                 },
                                 enabled = !loading,
