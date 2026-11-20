@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "661682421824-lqubrjsl7aoq84b6lhh6pf86lm5c3e8i.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nexora.app",
+            "certificate_hash": "f80369a2b75d97198dd6683446f87d0c5ce6f607"
+          }
+        },
+        {
           "client_id": "661682421824-r9m4enuq7ada88c6knfkpbtmv80mgqif.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
