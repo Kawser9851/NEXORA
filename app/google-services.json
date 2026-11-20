@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "661682421824-ljbng5pbsq8dlq3vvab6lii36qmghu3m.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nexora.app",
+            "certificate_hash": "12fac969fb26f24760982a5e019a9355f26e37af"
+          }
+        },
+        {
           "client_id": "661682421824-r9m4enuq7ada88c6knfkpbtmv80mgqif.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
