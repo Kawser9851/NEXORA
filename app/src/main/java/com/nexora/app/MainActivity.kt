@@ -507,59 +507,82 @@ private fun NEXORAScreen(auth: FirebaseAuth) {
                                 }
                             }
 
-                        } else {
-                            Text(
-                                "Your NEXORA Profile",
-                                color = Color.White,
-                                fontSize = 22.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                       
+} else {
+    Text(
+        "NEXORA",
+        color = Color(0xFFB7A4FF),
+        fontSize = 25.sp,
+        fontWeight = FontWeight.Bold
+    )
 
-                            Spacer(Modifier.height(18.dp))
+    NavigationBar {
+        NavigationBarItem(
+            selected = selectedPage == "Profile",
+            onClick = { selectedPage = "Profile" },
+            icon = { Text("👤") },
+            label = { Text("Profile") }
+        )
 
-                            Text(
-                                displayName,
-                                color = Color(0xFFB7A4FF),
-                                fontSize = 24.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text("@$username", color = Color(0xFF9FE7D5))
+        NavigationBarItem(
+            selected = selectedPage == "Activities",
+            onClick = { selectedPage = "Activities" },
+            icon = { Text("🤝") },
+            label = { Text("Activities") }
+        )
+    }
 
-                            Spacer(Modifier.height(12.dp))
-                            Text(
-                                if (bio.isBlank()) "No bio added yet." else bio,
-                                color = Color.White
-                            )
+    if (selectedPage == "Profile") {
+        Text(
+            "Your NEXORA Profile",
+            color = Color.White,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold
+        )
 
-                            if (photoUrl.isNotBlank()) {
-                                Spacer(Modifier.height(8.dp))
-                                Text(
-                                    "Profile picture URL saved",
-                                    color = Color.LightGray,
-                                    fontSize = 12.sp
-                                )
-                            }
+        Spacer(Modifier.height(18.dp))
 
-                            Spacer(Modifier.height(20.dp))
+        Text(
+            displayName,
+            color = Color(0xFFB7A4FF),
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold
+        )
 
-                            Button(
-                                onClick = {
-                                    editing = true
-                                    message = ""
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Edit Profile")
-                            }
+        Text("@$username", color = Color(0xFF9FE7D5))
 
-                            OutlinedButton(
-                                onClick = {
-                                    auth.signOut()
-                                    message = "Logged out."
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Logout")
+        Spacer(Modifier.height(12.dp))
+
+        Text(
+            if (bio.isBlank()) "No bio added yet." else bio,
+            color = Color.White
+        )
+
+        Button(
+            onClick = { editing = true },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Edit Profile")
+        }
+
+        OutlinedButton(
+            onClick = {
+                auth.signOut()
+                selectedPage = "Profile"
+                message = "Logged out."
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Logout")
+        }
+    } else {
+        FriendSystem(
+            uid = user!!.uid,
+            db = db
+        )
+    }
+}
+
                             }
                         }
 
