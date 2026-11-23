@@ -60,6 +60,7 @@ private fun NEXORAScreen(auth: FirebaseAuth) {
     var profileLoaded by remember { mutableStateOf(false) }
     var profileExists by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
+    var selectedPage by remember { mutableStateOf("Profile") }
 
     var username by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
