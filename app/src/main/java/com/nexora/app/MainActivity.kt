@@ -583,8 +583,7 @@ private fun NEXORAScreen(auth: FirebaseAuth) {
     }
 }
 
-                            }
-                        }
+                    
 
                         if (loading) {
                             Spacer(Modifier.height(12.dp))
