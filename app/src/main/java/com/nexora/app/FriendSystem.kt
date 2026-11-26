@@ -1,8 +1,8 @@
 package com.nexora.app
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -13,249 +13,422 @@ import com.google.firebase.firestore.ListenerRegistration
 
 private data class FriendRequestItem(
     val id: String,
-    val senderUid: String,
-    val receiverUid: String
-)
-
-private data class FriendItem(
-    val uid: String,
-    val name: String,
-    val username: String
+    val otherUid: String
 )
 
 @Composable
 fun FriendSystem(uid: String, db: FirebaseFirestore) {
-    var searchUsername by remember { mutableStateOf("") }
-    var statusMessage by remember { mutableStateOf("") }
-    var busy by remember { mutableStateOf(false) }
 
-    var incoming by remember { mutableStateOf(emptyList<FriendRequestItem>()) }
-    var outgoing by remember { mutableStateOf(emptyList<FriendRequestItem>()) }
-    var friends by remember { mutableStateOf(emptyList<FriendItem>()) }
+    var username by remember { mutableStateOf("") }
+    var searching by remember { mutableStateOf(false) }
+    var loadingAction by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf("") }
 
-    DisposableEffect(uid) {
+    var foundUid by remember { mutableStateOf("") }
+    var foundName by remember { mutableStateOf("") }
+    var foundUsername by remember { mutableStateOf("") }
+
+    var incoming by remember { mutableStateOf<List<FriendRequestItem>>(emptyList()) }
+    var outgoing by remember { mutableStateOf<List<FriendRequestItem>>(emptyList()) }
+
+    var friendsA by remember { mutableStateOf<List<String>>(emptyList()) }
+    var friendsB by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    val friendNames = remember { mutableStateMapOf<String, String>() }
+
+    val friendIds = (friendsA + friendsB).distinct()
+
+    DisposableEffect(uid, db) {
         val registrations = mutableListOf<ListenerRegistration>()
 
-        registrations += db.collection("friendRequests")
-            .whereEqualTo("receiverUid", uid)
-            .whereEqualTo("status", "pending")
-            .addSnapshotListener { snapshot, error ->
-                if (error == null && snapshot != null) {
-                    incoming = snapshot.documents.mapNotNull { doc ->
-                        val sender = doc.getString("senderUid") ?: return@mapNotNull null
-                        val receiver = doc.getString("receiverUid") ?: return@mapNotNull null
-                        FriendRequestItem(doc.id, sender, receiver)
-                    }
-                }
-            }
-
-        registrations += db.collection("friendRequests")
-            .whereEqualTo("senderUid", uid)
-            .whereEqualTo("status", "pending")
-            .addSnapshotListener { snapshot, error ->
-                if (error == null && snapshot != null) {
-                    outgoing = snapshot.documents.mapNotNull { doc ->
-                        val sender = doc.getString("senderUid") ?: return@mapNotNull null
-                        val receiver = doc.getString("receiverUid") ?: return@mapNotNull null
-                        FriendRequestItem(doc.id, sender, receiver)
-                    }
-                }
-            }
-
-        fun listenFriends(field: String) {
-            registrations += db.collection("friendships")
-                .whereEqualTo(field, uid)
+        registrations.add(
+            db.collection("friendRequests")
+                .whereEqualTo("receiverUid", uid)
                 .addSnapshotListener { snapshot, error ->
-                    if (error == null && snapshot != null) {
-                        val current = snapshot.documents.mapNotNull { doc ->
-                            val a = doc.getString("userA") ?: return@mapNotNull null
-                            val b = doc.getString("userB") ?: return@mapNotNull null
-                            val friendUid = if (a == uid) b else a
-                            FriendItem(friendUid, friendUid, "")
-                        }
-                        friends = (friends.filterNot { old ->
-                            old.uid in current.map { it.uid }
-                        } + current).distinctBy { it.uid }
+                    if (error != null) {
+                        message = "Incoming requests error: ${error.message}"
+                    } else {
+                        incoming = snapshot?.documents
+                            ?.filter { it.getString("status") == "pending" }
+                            ?.map {
+                                FriendRequestItem(
+                                    it.id,
+                                    it.getString("senderUid") ?: ""
+                                )
+                            } ?: emptyList()
                     }
                 }
-        }
+        )
 
-        listenFriends("userA")
-        listenFriends("userB")
+        registrations.add(
+            db.collection("friendRequests")
+                .whereEqualTo("senderUid", uid)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        message = "Sent requests error: ${error.message}"
+                    } else {
+                        outgoing = snapshot?.documents
+                            ?.filter { it.getString("status") == "pending" }
+                            ?.map {
+                                FriendRequestItem(
+                                    it.id,
+                                    it.getString("receiverUid") ?: ""
+                                )
+                            } ?: emptyList()
+                    }
+                }
+        )
+
+        registrations.add(
+            db.collection("friendships")
+                .whereEqualTo("userA", uid)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        message = "Friends loading error: ${error.message}"
+                    } else {
+                        friendsA = snapshot?.documents?.mapNotNull {
+                            it.getString("userB")
+                        } ?: emptyList()
+                    }
+                }
+        )
+
+        registrations.add(
+            db.collection("friendships")
+                .whereEqualTo("userB", uid)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        message = "Friends loading error: ${error.message}"
+                    } else {
+                        friendsB = snapshot?.documents?.mapNotNull {
+                            it.getString("userA")
+                        } ?: emptyList()
+                    }
+                }
+        )
 
         onDispose {
             registrations.forEach { it.remove() }
         }
     }
 
+    LaunchedEffect(friendIds) {
+        friendIds.forEach { friendUid ->
+            db.collection("profiles")
+                .document(friendUid)
+                .get()
+                .addOnSuccessListener { profile ->
+                    val name = profile.getString("displayName")
+                        ?: profile.getString("username")
+                        ?: friendUid
+
+                    val tag = profile.getString("username") ?: ""
+
+                    friendNames[friendUid] =
+                        if (tag.isNotBlank()) "$name (@$tag)" else name
+                }
+        }
+    }
+
+    fun searchFriend() {
+        val cleanUsername = username.trim().lowercase()
+
+        if (cleanUsername.isBlank()) {
+            message = "Please enter a username."
+            return
+        }
+
+        if (!cleanUsername.matches(Regex("^[a-z0-9_]{3,20}$"))) {
+            message = "Username must be 3-20 characters."
+            return
+        }
+
+        searching = true
+        message = "Searching..."
+        foundUid = ""
+        foundName = ""
+        foundUsername = ""
+
+        db.collection("usernames")
+            .document(cleanUsername)
+            .get()
+            .addOnSuccessListener { usernameDoc ->
+
+                if (!usernameDoc.exists()) {
+                    searching = false
+                    message = "User not found. Check the username."
+                    return@addOnSuccessListener
+                }
+
+                val targetUid = usernameDoc.getString("uid")
+
+                if (targetUid.isNullOrBlank()) {
+                    searching = false
+                    message = "This username record is incomplete."
+                    return@addOnSuccessListener
+                }
+
+                if (targetUid == uid) {
+                    searching = false
+                    message = "You cannot add yourself as a friend."
+                    return@addOnSuccessListener
+                }
+
+                db.collection("profiles")
+                    .document(targetUid)
+                    .get()
+                    .addOnSuccessListener { profile ->
+
+                        searching = false
+
+                        if (!profile.exists()) {
+                            message = "This user has not completed their profile."
+                            return@addOnSuccessListener
+                        }
+
+                        foundUid = targetUid
+                        foundName = profile.getString("displayName") ?: "NEXORA User"
+                        foundUsername = profile.getString("username") ?: cleanUsername
+                        message = "User found!"
+                    }
+                    .addOnFailureListener {
+                        searching = false
+                        message = "Profile error: ${it.message}"
+                    }
+            }
+            .addOnFailureListener {
+                searching = false
+                message = "Search failed: ${it.message}"
+            }
+    }
+
+    fun sendRequest() {
+        if (foundUid.isBlank()) {
+            message = "Search for a user first."
+            return
+        }
+
+        loadingAction = true
+        message = "Checking friend status..."
+
+        db.collection("friendships")
+            .whereEqualTo("userA", uid)
+            .whereEqualTo("userB", foundUid)
+            .get()
+            .addOnSuccessListener { first ->
+
+                db.collection("friendships")
+                    .whereEqualTo("userA", foundUid)
+                    .whereEqualTo("userB", uid)
+                    .get()
+                    .addOnSuccessListener { second ->
+
+                        if (!first.isEmpty || !second.isEmpty) {
+                            loadingAction = false
+                            message = "You are already friends."
+                            return@addOnSuccessListener
+                        }
+
+                        db.collection("friendRequests")
+                            .whereEqualTo("senderUid", uid)
+                            .get()
+                            .addOnSuccessListener { sent ->
+
+                                val alreadySent = sent.documents.any {
+                                    it.getString("receiverUid") == foundUid &&
+                                        it.getString("status") == "pending"
+                                }
+
+                                if (alreadySent) {
+                                    loadingAction = false
+                                    message = "Friend request already sent."
+                                    return@addOnSuccessListener
+                                }
+
+                                db.collection("friendRequests")
+                                    .whereEqualTo("senderUid", foundUid)
+                                    .get()
+                                    .addOnSuccessListener { received ->
+
+                                        val reversePending = received.documents.any {
+                                            it.getString("receiverUid") == uid &&
+                                                it.getString("status") == "pending"
+                                        }
+
+                                        if (reversePending) {
+                                            loadingAction = false
+                                            message = "This user has already sent you a request. Accept it below."
+                                            return@addOnSuccessListener
+                                        }
+
+                                        val request = hashMapOf(
+                                            "senderUid" to uid,
+                                            "receiverUid" to foundUid,
+                                            "status" to "pending",
+                                            "createdAt" to FieldValue.serverTimestamp()
+                                        )
+
+                                        db.collection("friendRequests")
+                                            .add(request)
+                                            .addOnSuccessListener {
+                                                loadingAction = false
+                                                message = "Friend request sent successfully!"
+                                            }
+                                            .addOnFailureListener {
+                                                loadingAction = false
+                                                message = "Could not send request: ${it.message}"
+                                            }
+                                    }
+                                    .addOnFailureListener {
+                                        loadingAction = false
+                                        message = "Request check failed: ${it.message}"
+                                    }
+                            }
+                            .addOnFailureListener {
+                                loadingAction = false
+                                message = "Request check failed: ${it.message}"
+                            }
+                    }
+                    .addOnFailureListener {
+                        loadingAction = false
+                        message = "Friend check failed: ${it.message}"
+                    }
+            }
+            .addOnFailureListener {
+                loadingAction = false
+                message = "Friend check failed: ${it.message}"
+            }
+    }
+
+    fun acceptRequest(request: FriendRequestItem) {
+        loadingAction = true
+
+        val batch = db.batch()
+
+        val requestRef = db.collection("friendRequests")
+            .document(request.id)
+
+        val friendshipRef = db.collection("friendships")
+            .document(request.id)
+
+        batch.update(requestRef, "status", "accepted")
+
+        batch.set(
+            friendshipRef,
+            mapOf(
+                "userA" to uid,
+                "userB" to request.otherUid,
+                "requestId" to request.id,
+                "createdAt" to FieldValue.serverTimestamp()
+            )
+        )
+
+        batch.commit()
+            .addOnSuccessListener {
+                loadingAction = false
+                message = "Friend request accepted!"
+            }
+            .addOnFailureListener {
+                loadingAction = false
+                message = "Accept failed: ${it.message}"
+            }
+    }
+
+    fun rejectRequest(request: FriendRequestItem) {
+        loadingAction = true
+
+        db.collection("friendRequests")
+            .document(request.id)
+            .update("status", "rejected")
+            .addOnSuccessListener {
+                loadingAction = false
+                message = "Friend request rejected."
+            }
+            .addOnFailureListener {
+                loadingAction = false
+                message = "Reject failed: ${it.message}"
+            }
+    }
+
     Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 20.dp)
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        HorizontalDivider()
-        Spacer(Modifier.height(16.dp))
-
-        Text("Find Friends", style = MaterialTheme.typography.titleLarge)
-        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Find Friends",
+            style = MaterialTheme.typography.headlineSmall
+        )
 
         OutlinedTextField(
-            value = searchUsername,
-            onValueChange = { searchUsername = it.lowercase().trim() },
-            label = { Text("Enter exact username") },
+            value = username,
+            onValueChange = { username = it.lowercase() },
+            label = { Text("Enter username") },
+            placeholder = { Text("example: nexora_user") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(Modifier.height(8.dp))
-
         Button(
-            onClick = {
-                val clean = searchUsername.trim().lowercase()
-
-                if (clean.isBlank()) {
-                    statusMessage = "Enter a username first."
-                } else {
-                    busy = true
-                    statusMessage = "Searching..."
-
-                    db.collection("usernames").document(clean).get()
-                        .addOnSuccessListener { usernameDoc ->
-                            val targetUid = usernameDoc.getString("uid")
-
-                            if (targetUid.isNullOrBlank()) {
-                                busy = false
-                                statusMessage = "User not found."
-                            } else if (targetUid == uid) {
-                                busy = false
-                                statusMessage = "You cannot add yourself."
-                            } else {
-                                db.collection("friendships")
-                                    .whereEqualTo("userA", uid)
-                                    .get()
-                                    .addOnSuccessListener { first ->
-                                        val alreadyFriend = first.documents.any {
-                                            it.getString("userB") == targetUid
-                                        }
-
-                                        db.collection("friendships")
-                                            .whereEqualTo("userB", uid)
-                                            .get()
-                                            .addOnSuccessListener { second ->
-                                                val alsoFriend = second.documents.any {
-                                                    it.getString("userA") == targetUid
-                                                }
-
-                                                if (alreadyFriend || alsoFriend) {
-                                                    busy = false
-                                                    statusMessage = "You are already friends."
-                                                } else {
-                                                    checkAndSendRequest(
-                                                        db, uid, targetUid
-                                                    ) { result ->
-                                                        busy = false
-                                                        statusMessage = result
-                                                    }
-                                                }
-                                            }
-                                            .addOnFailureListener {
-                                                busy = false
-                                                statusMessage = it.localizedMessage ?: "Search failed."
-                                            }
-                                    }
-                                    .addOnFailureListener {
-                                        busy = false
-                                        statusMessage = it.localizedMessage ?: "Search failed."
-                                    }
-                            }
-                        }
-                        .addOnFailureListener {
-                            busy = false
-                            statusMessage = it.localizedMessage ?: "Search failed."
-                        }
-                }
-            },
-            enabled = !busy,
+            onClick = { searchFriend() },
+            enabled = !searching && !loadingAction,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Search & Send Request")
+            Text(if (searching) "Searching..." else "Search Username")
         }
 
-        if (busy) {
-            CircularProgressIndicator()
+        if (message.isNotBlank()) {
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.primary
+            )
         }
 
-        if (statusMessage.isNotBlank()) {
-            Text(statusMessage, style = MaterialTheme.typography.bodySmall)
+        if (foundUid.isNotBlank()) {
+            HorizontalDivider()
+
+            Text("Search Result", style = MaterialTheme.typography.titleMedium)
+            Text(foundName, style = MaterialTheme.typography.titleLarge)
+            Text("@$foundUsername")
+
+            Button(
+                onClick = { sendRequest() },
+                enabled = !loadingAction,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Send Friend Request")
+            }
         }
 
-        Spacer(Modifier.height(20.dp))
         HorizontalDivider()
-        Spacer(Modifier.height(12.dp))
 
-        Text("Incoming Requests (${incoming.size})",
-            style = MaterialTheme.typography.titleMedium)
+        Text("Incoming Requests", style = MaterialTheme.typography.titleLarge)
 
         if (incoming.isEmpty()) {
-            Text("No new friend requests.")
+            Text("No incoming requests.")
         }
 
         incoming.forEach { request ->
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 5.dp)
-            ) {
-                Column(Modifier.padding(12.dp)) {
-                    Text("Request from: ${request.senderUid}")
-                    Row {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Request from: ${request.otherUid}")
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
-                            onClick = {
-                                val batch = db.batch()
-                                val requestRef = db.collection("friendRequests")
-                                    .document(request.id)
-                                val friendshipRef = db.collection("friendships")
-                                    .document(request.id)
-
-                                batch.update(requestRef, "status", "accepted")
-                                batch.set(
-                                    friendshipRef,
-                                    mapOf(
-                                        "userA" to request.senderUid,
-                                        "userB" to request.receiverUid,
-                                        "requestId" to request.id,
-                                        "createdAt" to FieldValue.serverTimestamp()
-                                    )
-                                )
-
-                                batch.commit()
-                                    .addOnSuccessListener {
-                                        statusMessage = "Friend request accepted!"
-                                    }
-                                    .addOnFailureListener {
-                                        statusMessage = it.localizedMessage
-                                            ?: "Could not accept request."
-                                    }
-                            }
+                            onClick = { acceptRequest(request) },
+                            enabled = !loadingAction
                         ) {
                             Text("Accept")
                         }
 
-                        Spacer(Modifier.width(8.dp))
-
                         OutlinedButton(
-                            onClick = {
-                                db.collection("friendRequests")
-                                    .document(request.id)
-                                    .update("status", "rejected")
-                                    .addOnSuccessListener {
-                                        statusMessage = "Request rejected."
-                                    }
-                                    .addOnFailureListener {
-                                        statusMessage = it.localizedMessage
-                                            ?: "Could not reject request."
-                                    }
-                            }
+                            onClick = { rejectRequest(request) },
+                            enabled = !loadingAction
                         ) {
                             Text("Reject")
                         }
@@ -264,83 +437,33 @@ fun FriendSystem(uid: String, db: FirebaseFirestore) {
             }
         }
 
-        Spacer(Modifier.height(16.dp))
         HorizontalDivider()
-        Spacer(Modifier.height(12.dp))
 
-        Text("Sent Requests (${outgoing.size})",
-            style = MaterialTheme.typography.titleMedium)
+        Text("Sent Requests", style = MaterialTheme.typography.titleLarge)
 
-        outgoing.forEach { request ->
-            Text("Pending: ${request.receiverUid}")
-            Spacer(Modifier.height(6.dp))
+        if (outgoing.isEmpty()) {
+            Text("No pending sent requests.")
         }
 
-        Spacer(Modifier.height(16.dp))
+        outgoing.forEach { request ->
+            Text("Pending: ${request.otherUid}")
+        }
+
         HorizontalDivider()
-        Spacer(Modifier.height(12.dp))
 
-        Text("My Friends (${friends.size})",
-            style = MaterialTheme.typography.titleMedium)
+        Text("My Friends", style = MaterialTheme.typography.titleLarge)
 
-        if (friends.isEmpty()) {
-            Text("No friends yet.")
-        } else {
-            friends.forEach { friend ->
-                Text("Friend UID: ${friend.uid}")
-                Spacer(Modifier.height(6.dp))
+        if (friendIds.isEmpty()) {
+            Text("You have no friends yet.")
+        }
+
+        friendIds.forEach { friendUid ->
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = friendNames[friendUid] ?: "Loading profile...",
+                    modifier = Modifier.padding(12.dp)
+                )
             }
         }
     }
-}
-
-private fun checkAndSendRequest(
-    db: FirebaseFirestore,
-    senderUid: String,
-    receiverUid: String,
-    onResult: (String) -> Unit
-) {
-    db.collection("friendRequests")
-        .whereEqualTo("senderUid", senderUid)
-        .whereEqualTo("receiverUid", receiverUid)
-        .whereEqualTo("status", "pending")
-        .get()
-        .addOnSuccessListener { sent ->
-            if (!sent.isEmpty) {
-                onResult("Request already sent.")
-                return@addOnSuccessListener
-            }
-
-            db.collection("friendRequests")
-                .whereEqualTo("senderUid", receiverUid)
-                .whereEqualTo("receiverUid", senderUid)
-                .whereEqualTo("status", "pending")
-                .get()
-                .addOnSuccessListener { received ->
-                    if (!received.isEmpty) {
-                        onResult("This user has already sent you a request.")
-                    } else {
-                        val requestRef = db.collection("friendRequests").document()
-
-                        requestRef.set(
-                            mapOf(
-                                "senderUid" to senderUid,
-                                "receiverUid" to receiverUid,
-                                "status" to "pending",
-                                "createdAt" to FieldValue.serverTimestamp()
-                            )
-                        ).addOnSuccessListener {
-                            onResult("Friend request sent!")
-                        }.addOnFailureListener {
-                            onResult(it.localizedMessage ?: "Could not send request.")
-                        }
-                    }
-                }
-                .addOnFailureListener {
-                    onResult(it.localizedMessage ?: "Could not check requests.")
-                }
-        }
-        .addOnFailureListener {
-            onResult(it.localizedMessage ?: "Could not check requests.")
-        }
 }
